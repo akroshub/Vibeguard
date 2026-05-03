@@ -1,0 +1,4 @@
+# Added by VibeGuard — prevent secret leaks
+.env
+.env.*
+!.env.example
