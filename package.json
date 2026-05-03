@@ -1,15 +1,20 @@
 {
-  "name": "vibeguard",
+  "name": "vibe-security-akoris",
   "version": "1.0.0",
   "description": "Real-time API key leak prevention for vibe-coders",
   "main": "index.js",
   "bin": {
-    "vibeguard": "./index.js"
+    "vibeguard": "index.js"
   },
   "scripts": {
     "test": "node index.js --scan"
   },
-  "keywords": ["security", "api-key", "vibe-coding", "leak-prevention"],
+  "keywords": [
+    "security",
+    "api-key",
+    "vibe-coding",
+    "leak-prevention"
+  ],
   "author": "akroshub",
   "license": "MIT",
   "repository": {
