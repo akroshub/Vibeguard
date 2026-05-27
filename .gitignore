@@ -1,0 +1,4 @@
+# Added by VibeGuard
+.env
+.env.*
+!.env.example

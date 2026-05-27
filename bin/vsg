@@ -1,0 +1,8 @@
+#!/usr/bin/env node
+
+const path = require('path');
+const { run } = require(path.join(__dirname, '../index.js'));
+
+const args = process.argv.slice(2);
+
+run(args);
