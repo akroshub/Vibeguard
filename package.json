@@ -1,7 +1,7 @@
 {
   "name": "vibeguard",
   "version": "1.1.0",
-  "description": "VibeGuard — защита от утечки ключей в реальном времени",
+  "description": "CLI tool for detecting and remediating exposed API keys and secrets",
   "main": "index.js",
   "bin": {
     "vsg": "./bin/vsg"

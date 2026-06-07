@@ -1,24 +1,43 @@
-# 🛡️ VibeGuard
+# VibeGuard
 
-VibeGuard is a real-time security tool designed to detect and remediate exposed API keys and secrets in your source files before they get pushed to production.
+VibeGuard is a CLI security tool that detects exposed API keys and secrets in source files before they reach production.
 
-## 🚀 Installation for Users
+## Installation
 
-To use VibeGuard globally on your machine, run these commands in your terminal:
+Install VibeGuard globally from GitHub:
 
-1. **Clone the repository:**
 ```bash
-   git clone [https://github.com/akroshub/Vibeguard.git](https://github.com/akroshub/Vibeguard.git)
-   cd Vibeguard
-2.Install and link globally:
-npm install
-npm link  
-🖥️ How to Use Anywhere
-Now open any other folder or project on your computer in your terminal and use the vsg command:
+npm install -g git+https://github.com/akroshub/Vibeguard.git
+```
 
-Scan for secrets:
-vsg --scan
-Safe test (Dry run)
+After installation, verify that the CLI is available:
+
+```bash
 vsg --scan --dry-run
-Real-time monitoring:
+```
+
+## Usage
+
+Scan the current project once:
+
+```bash
+vsg --scan
+```
+
+Run a safe dry-run scan without modifying files:
+
+```bash
+vsg --dry-run
+```
+
+Watch the current project for changes:
+
+```bash
 vsg
+```
+
+Install the Git pre-commit hook:
+
+```bash
+vsg --init-hook
+```
