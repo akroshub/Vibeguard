@@ -6,6 +6,17 @@
   "bin": {
     "vsg": "./bin/vsg"
   },
+  "scripts": {
+    "start": "node bin/vsg",
+    "scan": "node bin/vsg --scan",
+    "dry-run": "node bin/vsg --scan --dry-run"
+  },
+  "files": [
+    "bin",
+    "src",
+    "index.js",
+    "README.md"
+  ],
   "dependencies": {
     "chokidar": "^3.6.0"
   }
