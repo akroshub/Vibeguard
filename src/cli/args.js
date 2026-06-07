@@ -4,7 +4,7 @@ const { parseArgs } = require('node:util');
 function parseCliArgs(argv = process.argv.slice(2)) {
     const parsed = parseArgs({
         args: argv,
-        allowPositionals: false,
+        allowPositionals: true,
         options: {
             scan: {
                 type: 'boolean',
@@ -36,12 +36,14 @@ function parseCliArgs(argv = process.argv.slice(2)) {
     });
 
     const resolvedPath = path.resolve(parsed.values.path || process.cwd());
+    const scanPaths = parsed.positionals.map((filepath) => path.resolve(resolvedPath, filepath));
 
     return {
         scan: Boolean(parsed.values.scan),
         dryRun: Boolean(parsed.values['dry-run']),
         projectRoot: resolvedPath,
-        scanPath: resolvedPath,
+        scanPath: scanPaths[0] || resolvedPath,
+        scanPaths,
         json: Boolean(parsed.values.json),
         quiet: Boolean(parsed.values.quiet),
         initHook: Boolean(parsed.values['init-hook']),

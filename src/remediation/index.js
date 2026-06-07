@@ -98,11 +98,12 @@ async function remediate(finding, options = {}) {
 
     const approved = await shouldRemediateInteractively(finding, options);
     if (!approved) {
+        const action = options.continueOnSkip ? 'skip-remediation' : 'skip-file';
         const result = {
             filepath: finding.filepath,
             envVarName: finding.envVarName,
             skipped: true,
-            action: 'skip-file',
+            action,
             dryRun: Boolean(options.dryRun),
         };
         if (reporter) reporter.remediation(result);

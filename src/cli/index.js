@@ -27,21 +27,32 @@ function createRuntime(options) {
 }
 
 function resolvePaths(options) {
-    const scanPath = options.scanPath || options.projectRoot;
-    let stat;
-    try {
-        stat = fs.statSync(scanPath);
-    } catch (cause) {
-        throw new AppError('PATH_STAT_FAILED', `Unable to inspect path: ${scanPath}`, {
-            cause,
-            details: { path: scanPath },
-        });
+    const scanPaths = options.scanPaths && options.scanPaths.length
+        ? options.scanPaths
+        : [options.scanPath || options.projectRoot];
+    const stats = [];
+
+    for (const scanPath of scanPaths) {
+        try {
+            stats.push(fs.statSync(scanPath));
+        } catch (cause) {
+            throw new AppError('PATH_STAT_FAILED', `Unable to inspect path: ${scanPath}`, {
+                cause,
+                details: { path: scanPath },
+            });
+        }
     }
+
+    const primaryScanPath = scanPaths[0];
+    const primaryStat = stats[0];
 
     return {
         ...options,
-        scanPath,
-        projectRoot: stat.isFile() ? path.dirname(scanPath) : scanPath,
+        scanPath: primaryScanPath,
+        scanPaths,
+        projectRoot: scanPaths.length === 1 && primaryStat.isFile()
+            ? path.dirname(primaryScanPath)
+            : options.projectRoot,
     };
 }
 
@@ -51,6 +62,13 @@ function validateOptions(options) {
             details: { supported: ['md'] },
         });
     }
+}
+
+function normalizeOptions(options) {
+    return {
+        ...options,
+        scan: options.dryRun ? true : options.scan,
+    };
 }
 
 function shouldFailOnFindings(stats) {
@@ -66,7 +84,7 @@ async function initializeHook(options, reporter) {
 }
 
 async function run(argv = process.argv.slice(2)) {
-    const options = resolvePaths(parseCliArgs(argv));
+    const options = resolvePaths(normalizeOptions(parseCliArgs(argv)));
     validateOptions(options);
     const { reporter } = createRuntime(options);
 
@@ -82,6 +100,7 @@ async function run(argv = process.argv.slice(2)) {
             dryRun: options.dryRun,
             requireApproval: options.scan && !options.dryRun && !options.quiet,
             interactive: options.scan && !options.dryRun && !options.quiet && !options.json,
+            continueOnSkip: options.json || !process.stdout.isTTY,
             reporter,
         });
 
@@ -92,6 +111,7 @@ async function run(argv = process.argv.slice(2)) {
         const stats = await scanProject({
             projectRoot: options.projectRoot,
             scanPath: options.scanPath,
+            scanPaths: options.scanPaths,
             reporter,
             onFinding,
         });

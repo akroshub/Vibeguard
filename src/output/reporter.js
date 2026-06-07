@@ -161,7 +161,12 @@ function createReporter(options = {}) {
 
             if (reportType === 'md') {
                 const reportPath = path.join(projectRoot, 'vsg-report.md');
-                fs.writeFileSync(reportPath, markdownReport(findings, stats, projectRoot), 'utf8');
+                try {
+                    fs.writeFileSync(reportPath, markdownReport(findings, stats, projectRoot), 'utf8');
+                } catch (error) {
+                    console.warn(`Warning: Unable to write Markdown report: ${error.message}`);
+                    return;
+                }
                 if (!quiet) {
                     logger.info(`Markdown report written to: ${reportPath}`);
                 }

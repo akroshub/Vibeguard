@@ -167,7 +167,9 @@ async function scanFile(filepath, options = {}) {
 
 async function scanProject(options) {
     const projectRoot = options.projectRoot;
-    const scanPath = options.scanPath || projectRoot;
+    const scanPaths = options.scanPaths && options.scanPaths.length
+        ? options.scanPaths
+        : [options.scanPath || projectRoot];
     const rules = options.rules || getRules();
     const stats = {
         filesVisited: 0,
@@ -176,48 +178,50 @@ async function scanProject(options) {
         errors: 0,
     };
 
-    let target;
-    try {
-        target = fs.statSync(scanPath);
-    } catch (cause) {
-        stats.errors += 1;
-        if (options.reporter) {
-            options.reporter.warning(new AppError('PATH_STAT_FAILED', `Unable to inspect path: ${scanPath}`, {
-                cause,
-                recoverable: true,
-                details: { path: scanPath },
-            }));
-        }
-        return stats;
-    }
-
-    if (target.isFile()) {
-        stats.filesVisited = 1;
-        await scanFile(scanPath, {
-            rules,
-            reporter: options.reporter,
-            onFinding: options.onFinding,
-            stats,
-        });
-        return stats;
-    }
-
-    const files = walkFiles(scanPath, {
-        onError(error) {
+    for (const scanPath of scanPaths) {
+        let target;
+        try {
+            target = fs.statSync(scanPath);
+        } catch (cause) {
             stats.errors += 1;
-            if (options.reporter) options.reporter.warning(error);
-        },
-    });
+            if (options.reporter) {
+                options.reporter.warning(new AppError('PATH_STAT_FAILED', `Unable to inspect path: ${scanPath}`, {
+                    cause,
+                    recoverable: true,
+                    details: { path: scanPath },
+                }));
+            }
+            continue;
+        }
 
-    stats.filesVisited = files.length;
+        if (target.isFile()) {
+            stats.filesVisited += 1;
+            await scanFile(scanPath, {
+                rules,
+                reporter: options.reporter,
+                onFinding: options.onFinding,
+                stats,
+            });
+            continue;
+        }
 
-    for (const file of files) {
-        await scanFile(file, {
-            rules,
-            reporter: options.reporter,
-            onFinding: options.onFinding,
-            stats,
+        const files = walkFiles(scanPath, {
+            onError(error) {
+                stats.errors += 1;
+                if (options.reporter) options.reporter.warning(error);
+            },
         });
+
+        stats.filesVisited += files.length;
+
+        for (const file of files) {
+            await scanFile(file, {
+                rules,
+                reporter: options.reporter,
+                onFinding: options.onFinding,
+                stats,
+            });
+        }
     }
 
     return stats;
