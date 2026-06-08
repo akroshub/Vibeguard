@@ -1,7 +1,3 @@
-const { run, main } = require('./src/cli');
-
-module.exports = { run, main };
-
-if (require.main === module) {
-    main(process.argv.slice(2));
-}
+export { scanFile, scanProject } from './src/core/engine.js';
+export { abstractFindings } from './src/core/remediator.js';
+export { main, run } from './src/cli.js';

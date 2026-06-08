@@ -1,2 +1,4 @@
 #!/usr/bin/env node
-require('../src/cli').main(process.argv.slice(2));
+import { main } from '../src/cli.js';
+
+await main(process.argv.slice(2));

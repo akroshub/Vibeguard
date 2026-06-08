@@ -1,43 +1,127 @@
 # VibeGuard
 
-VibeGuard is a CLI security tool that detects exposed API keys and secrets in source files before they reach production.
+VibeGuard is an algorithmic JavaScript/TypeScript secret scanner. The MVP intentionally avoids vendor-specific API key regexes and hardcoded cloud-provider signatures. It validates possible secrets with two independent signals:
 
-## Installation
+1. AST context: the scanner parses source files and only inspects string literals assigned to identifiers or properties whose names imply sensitive intent, such as `secret`, `token`, `key`, `password`, or `auth`.
+2. Shannon entropy: the string value must exceed the configured entropy threshold before VibeGuard treats it as a vulnerability.
 
-Install VibeGuard globally from GitHub:
+The result is a small DevSecOps core engine focused on language structure and mathematics instead of brittle signature databases.
 
-```bash
-npm install -g git+https://github.com/akroshub/Vibeguard.git
+## How Detection Works
+
+VibeGuard parses each supported source file with Babel and walks these AST nodes:
+
+- `VariableDeclarator`, for code like `const authToken = "...";`
+- `AssignmentExpression`, for code like `config.apiKey = "...";`
+- `ObjectProperty`, for code like `{ password: "..." }`
+- `ClassProperty`, for code like `token = "...";`
+
+For each candidate, it computes Shannon entropy:
+
+```text
+H(X) = -sum(P(x_i) * log2(P(x_i)))
 ```
 
-After installation, verify that the CLI is available:
+Names alone are never enough. For example, `const apiKey = "default"` is ignored because the value is too predictable, while a random base64-like token is flagged.
+
+## Git Delta Scanning
+
+When a `.git` directory exists, VibeGuard first asks Git for staged source files:
 
 ```bash
-vsg --scan --dry-run
+git diff --staged --name-only --diff-filter=ACMR
+```
+
+If staged files exist, only those files are scanned. If there are no staged JavaScript or TypeScript files, VibeGuard falls back to a full workspace source scan.
+
+## Remediation
+
+For confirmed findings, VibeGuard:
+
+- Replaces the string literal with `process.env.<UPPERCASE_IDENTIFIER>`.
+- Writes the real value to `.env` using quoted dotenv-compatible syntax.
+- Ensures `.env*` appears in `.gitignore` exactly once.
+- Writes updated files atomically through temporary files and rename operations.
+
+Example:
+
+```js
+const serviceToken = "f9uQpL7xZ2vN4mR8sT1bC6dE3hJ5kW0y";
+```
+
+becomes:
+
+```js
+const serviceToken = process.env.SERVICE_TOKEN;
+```
+
+and `.env` receives:
+
+```text
+SERVICE_TOKEN="f9uQpL7xZ2vN4mR8sT1bC6dE3hJ5kW0y"
 ```
 
 ## Usage
 
-Scan the current project once:
+Install dependencies:
 
 ```bash
-vsg --scan
+npm install
 ```
 
-Run a safe dry-run scan without modifying files:
+Run an interactive scan:
 
 ```bash
-vsg --dry-run
+npm run scan
 ```
 
-Watch the current project for changes:
+Run without changing files:
 
 ```bash
-vsg
+npm run dry-run
 ```
 
-Install the Git pre-commit hook:
+Automatically remediate all findings:
 
 ```bash
-vsg --init-hook
+node bin/vsg --scan --yes
+```
+
+Scan a specific path:
+
+```bash
+node bin/vsg --path test-vault --dry-run
+```
+
+Change the entropy threshold:
+
+```bash
+node bin/vsg --threshold 4.5
+```
+
+Run the MVP test suite:
+
+```bash
+npm test
+```
+
+## Supported Files
+
+VibeGuard scans `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, and `.tsx` files.
+
+## Project Layout
+
+```text
+src/
+  cli.js
+  core/
+    engine.js
+    remediator.js
+  utils/
+    entropy.js
+    git.js
+test-vault/
+  generic-secrets.js
+  safe-code.js
+  test.js
 ```
