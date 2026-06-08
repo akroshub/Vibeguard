@@ -220,7 +220,10 @@ export async function scanFile(filepath, options = {}) {
 
 export async function scanProject(options = {}) {
   const projectRoot = path.resolve(options.projectRoot ?? process.cwd());
-  const scanTargets = await getScanTargets(projectRoot, { path: options.path ?? projectRoot });
+  const scanTargets = await getScanTargets(projectRoot, {
+    path: options.path ?? projectRoot,
+    stagedOnly: options.stagedOnly ?? false,
+  });
   const findings = [];
   const parseErrors = [];
 

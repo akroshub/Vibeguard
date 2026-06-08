@@ -75,6 +75,14 @@ Run an interactive scan:
 npm run scan
 ```
 
+Run the scanner in CI/pre-commit mode:
+
+```bash
+npx vibeguard scan --ci
+```
+
+CI mode prints redacted JSON, never prompts, never rewrites files, and exits with status `1` when validated secret candidates are found.
+
 Run without changing files:
 
 ```bash
@@ -105,6 +113,30 @@ Run the MVP test suite:
 npm test
 ```
 
+## Automatic Protection
+
+VibeGuard can install a persistent Git pre-commit sentinel:
+
+```bash
+npx vibeguard-protect
+```
+
+The protector verifies that the current directory is inside a Git work tree, locates the repository hook path with Git, and offers to install a `pre-commit` hook. Existing hook content is preserved. VibeGuard adds an idempotent Sentinel block, so rerunning the installer refreshes the block instead of duplicating it.
+
+Once installed, every commit runs:
+
+```bash
+npx vibeguard scan --ci
+```
+
+If the staged diff contains a validated high-entropy secret, the scanner exits nonzero and Git aborts the commit. The hook is written as a portable shell script for Unix and Git for Windows environments; it can invoke `npx`, `npx.cmd`, Windows PowerShell, or PowerShell Core depending on what is available.
+
+Non-interactive installation is available for bootstrap scripts:
+
+```bash
+npx vibeguard-protect --yes
+```
+
 ## Supported Files
 
 VibeGuard scans `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, and `.tsx` files.
@@ -114,6 +146,7 @@ VibeGuard scans `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, and `.tsx` files.
 ```text
 src/
   cli.js
+  protector.js
   core/
     engine.js
     remediator.js

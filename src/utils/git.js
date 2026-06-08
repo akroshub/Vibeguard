@@ -99,7 +99,7 @@ export async function getScanTargets(projectRoot = process.cwd(), options = {}) 
   const root = path.resolve(options.path ?? projectRoot);
   const stagedFiles = await getStagedSourceFiles(projectRoot);
 
-  if (stagedFiles.length > 0) {
+  if (stagedFiles.length > 0 || options.stagedOnly) {
     return {
       mode: 'staged',
       files: stagedFiles.filter((file) => file.startsWith(path.resolve(root)) || root === projectRoot),

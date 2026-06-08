@@ -11,6 +11,9 @@ function parseArgs(argv = []) {
     dryRun: false,
     yes: false,
     json: false,
+    ci: false,
+    silent: false,
+    pathProvided: false,
     path: process.cwd(),
     entropyThreshold: DEFAULT_ENTROPY_THRESHOLD,
   };
@@ -18,7 +21,7 @@ function parseArgs(argv = []) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
 
-    if (arg === '--scan') {
+    if (arg === 'scan' || arg === '--scan') {
       options.scan = true;
     } else if (arg === '--dry-run') {
       options.dryRun = true;
@@ -26,6 +29,14 @@ function parseArgs(argv = []) {
       options.yes = true;
     } else if (arg === '--json') {
       options.json = true;
+    } else if (arg === '--ci') {
+      options.ci = true;
+      options.json = true;
+      options.dryRun = true;
+    } else if (arg === '--silent') {
+      options.silent = true;
+      options.json = true;
+      options.dryRun = true;
     } else if (arg === '--threshold') {
       const threshold = Number(argv[index + 1]);
       if (Number.isFinite(threshold)) {
@@ -34,13 +45,45 @@ function parseArgs(argv = []) {
       }
     } else if (arg === '--path') {
       options.path = path.resolve(argv[index + 1] ?? process.cwd());
+      options.pathProvided = true;
       index += 1;
     } else if (!arg.startsWith('-')) {
       options.path = path.resolve(arg);
+      options.pathProvided = true;
     }
   }
 
   return options;
+}
+
+function safeFinding(finding, projectRoot) {
+  return {
+    file: path.relative(projectRoot, finding.file),
+    identifier: finding.identifier,
+    envName: finding.envName,
+    entropy: Number(finding.entropy.toFixed(4)),
+    threshold: finding.threshold,
+    nodeType: finding.nodeType,
+    line: finding.line,
+    column: finding.column,
+  };
+}
+
+function safeScan(scan) {
+  return {
+    mode: scan.mode,
+    scannedFiles: scan.scannedFiles.map((file) => path.relative(scan.projectRoot, file)),
+    findings: scan.findings.map((finding) => safeFinding(finding, scan.projectRoot)),
+    parseErrors: scan.parseErrors.map((parseError) => ({
+      file: path.relative(scan.projectRoot, parseError.file),
+      message: parseError.message,
+    })),
+    summary: {
+      scannedFiles: scan.scannedFiles.length,
+      findings: scan.findings.length,
+      parseErrors: scan.parseErrors.length,
+    },
+  };
 }
 
 function formatFinding(finding, projectRoot) {
@@ -85,8 +128,17 @@ export async function run(argv = []) {
   const scan = await scanProject({
     projectRoot: process.cwd(),
     path: options.path,
+    stagedOnly: (options.ci || options.silent) && !options.pathProvided,
     entropyThreshold: options.entropyThreshold,
   });
+
+  if (options.ci || options.silent) {
+    process.stdout.write(`${JSON.stringify(safeScan(scan), null, 2)}\n`);
+    if (scan.findings.length > 0) {
+      process.exitCode = 1;
+    }
+    return scan;
+  }
 
   if (options.json) {
     process.stdout.write(`${JSON.stringify(scan, null, 2)}\n`);
