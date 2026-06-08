@@ -4,6 +4,7 @@ import { parse } from '@babel/parser';
 import traverseModule from '@babel/traverse';
 import { shannonEntropy } from '../utils/entropy.js';
 import { getScanTargets, isSupportedSourceFile } from '../utils/git.js';
+import { filterIgnoredFiles, loadIgnorePolicy } from '../utils/ignore.js';
 
 const traverse = traverseModule.default ?? traverseModule;
 const SECRET_NAME_PATTERN = /secret|token|key|password|auth/i;
@@ -224,10 +225,15 @@ export async function scanProject(options = {}) {
     path: options.path ?? projectRoot,
     stagedOnly: options.stagedOnly ?? false,
   });
+  const ignorePolicy = await loadIgnorePolicy({
+    projectRoot,
+    path: options.path ?? projectRoot,
+  });
+  const scannedFiles = filterIgnoredFiles(scanTargets.files, ignorePolicy);
   const findings = [];
   const parseErrors = [];
 
-  for (const file of scanTargets.files) {
+  for (const file of scannedFiles) {
     try {
       findings.push(...(await scanFile(file, options)));
     } catch (error) {
@@ -241,7 +247,9 @@ export async function scanProject(options = {}) {
   return {
     projectRoot,
     mode: scanTargets.mode,
-    scannedFiles: scanTargets.files,
+    scannedFiles,
+    ignoredFiles: scanTargets.files.filter((file) => !scannedFiles.includes(file)),
+    ignoreFile: ignorePolicy.ignoreFile,
     findings,
     parseErrors,
   };
