@@ -1,14 +1,41 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { parse } from '@babel/parser';
 import traverseModule from '@babel/traverse';
 import { shannonEntropy } from '../utils/entropy.js';
+import { loadConfig } from '../utils/config.js';
 import { getScanTargets, isSupportedSourceFile } from '../utils/git.js';
 import { filterIgnoredFiles, loadIgnorePolicy } from '../utils/ignore.js';
 
 const traverse = traverseModule.default ?? traverseModule;
 const SECRET_NAME_PATTERN = /secret|token|key|password|auth/i;
 const DEFAULT_ENTROPY_THRESHOLD = 4.0;
+const DEFAULT_MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024;
+const PLACEHOLDER_VALUES = new Set([
+  'test',
+  'testing',
+  'password',
+  'secret',
+  'token',
+  'apikey',
+  'api-key',
+  'api_key',
+  'your-api-key',
+  'your_api_key',
+  'your api key',
+  'your-token',
+  'your_token',
+  'your-secret',
+  'your_secret',
+  'change-me',
+  'changeme',
+  'replace-me',
+  'placeholder',
+  'example',
+  'sample',
+  'dummy',
+  'fake',
+]);
 
 function parserPluginsForFile(filepath) {
   const extension = path.extname(filepath).toLowerCase();
@@ -117,8 +144,59 @@ function isSecretName(name) {
   return typeof name === 'string' && SECRET_NAME_PATTERN.test(name);
 }
 
+function normalizeCandidateValue(value) {
+  return String(value)
+    .trim()
+    .replace(/^['"`]+|['"`]+$/g, '')
+    .toLowerCase();
+}
+
+function isObviousPlaceholder(value) {
+  const normalized = normalizeCandidateValue(value);
+
+  if (PLACEHOLDER_VALUES.has(normalized)) {
+    return true;
+  }
+
+  if (/^\$\{[a-z0-9_]+\}$/i.test(normalized)) {
+    return true;
+  }
+
+  if (/^(x+|a+|0+|1+)$/.test(normalized)) {
+    return true;
+  }
+
+  if (/^your[-_\s]?(api[-_\s]?key|key|token|secret|password)$/.test(normalized)) {
+    return true;
+  }
+
+  if (/^(example|sample|dummy|fake|test)[-_\s]?(api[-_\s]?key|key|token|secret|password)?$/.test(normalized)) {
+    return true;
+  }
+
+  return /^(api[-_\s]?key|key|token|secret|password)[-_\s]?(here|value|example|sample|test)$/.test(normalized);
+}
+
+function confidenceForEntropy(entropy, threshold) {
+  const margin = entropy - threshold;
+
+  if (margin >= 1.25) {
+    return 'high';
+  }
+
+  if (margin >= 0.5) {
+    return 'medium';
+  }
+
+  return 'low';
+}
+
 function createFinding({ filepath, source, name, literal, nodeType, threshold }) {
   if (!literal || typeof literal.start !== 'number' || typeof literal.end !== 'number') {
+    return null;
+  }
+
+  if (isObviousPlaceholder(literal.value)) {
     return null;
   }
 
@@ -139,6 +217,8 @@ function createFinding({ filepath, source, name, literal, nodeType, threshold })
     value: literal.value,
     entropy,
     threshold,
+    confidence: confidenceForEntropy(entropy, threshold),
+    reason: `sensitive identifier "${name}" has entropy ${entropy.toFixed(2)} above threshold ${threshold.toFixed(2)}`,
     nodeType,
     literalStart: literal.start,
     literalEnd: literal.end,
@@ -150,9 +230,22 @@ function createFinding({ filepath, source, name, literal, nodeType, threshold })
 export async function scanFile(filepath, options = {}) {
   const absoluteFile = path.resolve(filepath);
   const threshold = options.entropyThreshold ?? DEFAULT_ENTROPY_THRESHOLD;
+  const maxFileSizeBytes = options.maxFileSizeBytes ?? DEFAULT_MAX_FILE_SIZE_BYTES;
 
   if (!isSupportedSourceFile(absoluteFile)) {
     return [];
+  }
+
+  const details = await stat(absoluteFile);
+  if (!details.isFile() || details.size === 0) {
+    return [];
+  }
+
+  if (maxFileSizeBytes > 0 && details.size > maxFileSizeBytes) {
+    const error = new Error(`Skipped file larger than ${maxFileSizeBytes} bytes`);
+    error.code = 'VIBEGUARD_FILE_TOO_LARGE';
+    error.scanWarning = true;
+    throw error;
   }
 
   const source = await readFile(absoluteFile, 'utf8');
@@ -221,6 +314,9 @@ export async function scanFile(filepath, options = {}) {
 
 export async function scanProject(options = {}) {
   const projectRoot = path.resolve(options.projectRoot ?? process.cwd());
+  const config = await loadConfig({ projectRoot });
+  const entropyThreshold = options.entropyThreshold ?? config.entropyThreshold ?? DEFAULT_ENTROPY_THRESHOLD;
+  const maxFileSizeBytes = options.maxFileSizeBytes ?? config.maxFileSizeBytes ?? DEFAULT_MAX_FILE_SIZE_BYTES;
   const scanTargets = await getScanTargets(projectRoot, {
     path: options.path ?? projectRoot,
     stagedOnly: options.stagedOnly ?? false,
@@ -228,16 +324,23 @@ export async function scanProject(options = {}) {
   const ignorePolicy = await loadIgnorePolicy({
     projectRoot,
     path: options.path ?? projectRoot,
+    extraPatterns: config.ignoredPaths,
   });
   const scannedFiles = filterIgnoredFiles(scanTargets.files, ignorePolicy);
   const findings = [];
   const parseErrors = [];
+  const scanWarnings = [];
 
   for (const file of scannedFiles) {
     try {
-      findings.push(...(await scanFile(file, options)));
+      findings.push(...(await scanFile(file, {
+        ...options,
+        entropyThreshold,
+        maxFileSizeBytes,
+      })));
     } catch (error) {
-      parseErrors.push({
+      const target = error.scanWarning ? scanWarnings : parseErrors;
+      target.push({
         file,
         message: error.message,
       });
@@ -250,9 +353,17 @@ export async function scanProject(options = {}) {
     scannedFiles,
     ignoredFiles: scanTargets.files.filter((file) => !scannedFiles.includes(file)),
     ignoreFile: ignorePolicy.ignoreFile,
+    configFile: config.configFile,
     findings,
     parseErrors,
+    scanWarnings,
   };
 }
 
-export { DEFAULT_ENTROPY_THRESHOLD, SECRET_NAME_PATTERN, identifierToEnvName };
+export {
+  DEFAULT_ENTROPY_THRESHOLD,
+  DEFAULT_MAX_FILE_SIZE_BYTES,
+  SECRET_NAME_PATTERN,
+  identifierToEnvName,
+  isObviousPlaceholder,
+};

@@ -1,160 +1,134 @@
 # VibeGuard
 
-VibeGuard is an algorithmic JavaScript/TypeScript secret scanner. The MVP intentionally avoids vendor-specific API key regexes and hardcoded cloud-provider signatures. It validates possible secrets with two independent signals:
+VibeGuard is a beta JavaScript/TypeScript secret scanner. It flags likely secrets by combining:
 
-1. AST context: the scanner parses source files and only inspects string literals assigned to identifiers or properties whose names imply sensitive intent, such as `secret`, `token`, `key`, `password`, or `auth`.
-2. Shannon entropy: the string value must exceed the configured entropy threshold before VibeGuard treats it as a vulnerability.
+- AST context: the value is assigned to a sensitive-looking name such as `apiKey`, `token`, `secret`, `password`, or `auth`.
+- Shannon entropy: the value is random-looking enough to pass the configured threshold.
 
-The result is a small DevSecOps core engine focused on language structure and mathematics instead of brittle signature databases.
+This keeps simple placeholders like `password = "test"` and `apiKey = "your-api-key"` out of the results.
 
-## How Detection Works
-
-VibeGuard parses each supported source file with Babel and walks these AST nodes:
-
-- `VariableDeclarator`, for code like `const authToken = "...";`
-- `AssignmentExpression`, for code like `config.apiKey = "...";`
-- `ObjectProperty`, for code like `{ password: "..." }`
-- `ClassProperty`, for code like `token = "...";`
-
-For each candidate, it computes Shannon entropy:
-
-```text
-H(X) = -sum(P(x_i) * log2(P(x_i)))
-```
-
-Names alone are never enough. For example, `const apiKey = "default"` is ignored because the value is too predictable, while a random base64-like token is flagged.
-
-## Git Delta Scanning
-
-When a `.git` directory exists, VibeGuard first asks Git for staged source files:
-
-```bash
-git diff --staged --name-only --diff-filter=ACMR
-```
-
-If staged files exist, only those files are scanned. If there are no staged JavaScript or TypeScript files, VibeGuard falls back to a full workspace source scan.
-
-## Remediation
-
-For confirmed findings, VibeGuard:
-
-- Replaces the string literal with `process.env.<UPPERCASE_IDENTIFIER>`.
-- Writes the real value to `.env` using quoted dotenv-compatible syntax.
-- Ensures `.env*` appears in `.gitignore` exactly once.
-- Writes updated files atomically through temporary files and rename operations.
-
-Example:
-
-```js
-const serviceToken = "f9uQpL7xZ2vN4mR8sT1bC6dE3hJ5kW0y";
-```
-
-becomes:
-
-```js
-const serviceToken = process.env.SERVICE_TOKEN;
-```
-
-and `.env` receives:
-
-```text
-SERVICE_TOKEN="f9uQpL7xZ2vN4mR8sT1bC6dE3hJ5kW0y"
-```
-
-## Usage
-
-Install dependencies:
+## Install
 
 ```bash
 npm install
 ```
 
-Run an interactive scan:
+Or run it from another project:
+
+```bash
+npx vibe-security-akoris scan
+```
+
+## Usage
+
+Scan the current project:
 
 ```bash
 npm run scan
 ```
 
-Run the scanner in CI/pre-commit mode:
+Scan without changing files:
 
 ```bash
-npx vibe-security-akoris scan --ci
+npx vibe-security-akoris scan
 ```
 
-CI mode prints redacted JSON, never prompts, never rewrites files, and exits with status `1` when validated secret candidates are found.
-
-Run without changing files:
+Preview fixes without writing anything:
 
 ```bash
-npm run dry-run
+npx vibe-security-akoris scan --dry-run
 ```
 
-Automatically remediate all findings:
+Replace detected literals with `process.env.NAME` and write values to `.env`:
 
 ```bash
-node bin/vsg --scan --yes
+npx vibe-security-akoris scan --fix
+```
+
+Run non-interactively:
+
+```bash
+npx vibe-security-akoris scan --fix --yes
 ```
 
 Scan a specific path:
 
 ```bash
-node bin/vsg --path test-vault --dry-run
+npx vibe-security-akoris scan --path src
 ```
 
-Change the entropy threshold:
-
-```bash
-node bin/vsg --threshold 4.5
-```
-
-Run the MVP test suite:
-
-```bash
-npm test
-```
-
-## Automatic Protection
-
-VibeGuard can install a persistent Git pre-commit sentinel:
-
-```bash
-npx --package vibe-security-akoris vibe-security-akoris-protect
-```
-
-The protector verifies that the current directory is inside a Git work tree, locates the repository hook path with Git, and offers to install a `pre-commit` hook. Existing hook content is preserved. VibeGuard adds an idempotent Sentinel block, so rerunning the installer refreshes the block instead of duplicating it.
-
-Once installed, every commit runs:
+Use in CI or pre-commit hooks:
 
 ```bash
 npx vibe-security-akoris scan --ci
 ```
 
-If the staged diff contains a validated high-entropy secret, the scanner exits nonzero and Git aborts the commit. The hook is written as a portable shell script for Unix and Git for Windows environments; it can invoke `npx`, `npx.cmd`, Windows PowerShell, or PowerShell Core depending on what is available.
+## Safety Defaults
 
-Non-interactive installation is available for bootstrap scripts:
+- Default mode is scan-only. Files are changed only with `--fix`.
+- `--dry-run` shows the source, `.env`, and `.gitignore` changes before editing.
+- Full secrets are never printed; output uses masked values like `sk-****abcd`.
+- Existing `.env` values are not overwritten. If a name already exists with a different value, VibeGuard creates a suffixed name and prints a warning.
+- `.gitignore` gets `.env` only when it is missing.
+- Common generated paths are ignored by default, including `.git`, `node_modules`, `dist`, `build`, `coverage`, and lock files.
+
+## Output
+
+Findings include file path, line, column, identifier, confidence, and reason:
+
+```text
+src/app.js:12:21 apiKey confidence=medium sensitive identifier "apiKey" has entropy 4.73 above threshold 4.00
+```
+
+Exit codes:
+
+```text
+0 = no secrets found
+1 = secrets found
+2 = scanner/config/parse error
+```
+
+## Config
+
+Create `.vibeguardrc` in your project root:
+
+```json
+{
+  "entropyThreshold": 4.5,
+  "ignoredPaths": ["fixtures/**", "vendor/**"],
+  "maxFileSizeBytes": 2097152
+}
+```
+
+You can also add `.vibeguardignore` with simple glob patterns.
+
+## Pre-commit Protection
+
+Install the Git hook:
+
+```bash
+npx --package vibe-security-akoris vibe-security-akoris-protect
+```
+
+Install without prompts:
 
 ```bash
 npx --package vibe-security-akoris vibe-security-akoris-protect --yes
 ```
 
+The hook scans staged JS/TS files and blocks the commit when validated secret candidates are found.
+
 ## Supported Files
 
-VibeGuard scans `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, and `.tsx` files.
+VibeGuard scans `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, and `.tsx`.
 
-## Project Layout
+## Limitations
 
-```text
-src/
-  cli.js
-  protector.js
-  core/
-    engine.js
-    remediator.js
-  utils/
-    entropy.js
-    git.js
-test-vault/
-  generic-secrets.js
-  safe-code.js
-  test.js
-```
+- JavaScript and TypeScript only.
+- Beta scanner: it may miss secrets and may still report false positives.
+- It checks string literals in supported AST contexts, not every possible way a secret can appear.
+- It intentionally avoids vendor-specific API-key regex databases.
+
+## Feedback
+
+Issues and feedback: https://github.com/akroshub/Vibeguard/issues

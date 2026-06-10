@@ -1,6 +1,23 @@
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
+const DEFAULT_IGNORED_PATTERNS = [
+  '.git/**',
+  'node_modules/**',
+  'dist/**',
+  'build/**',
+  'coverage/**',
+  '.next/**',
+  '.nuxt/**',
+  '.turbo/**',
+  'package-lock.json',
+  'npm-shrinkwrap.json',
+  'yarn.lock',
+  'pnpm-lock.yaml',
+  'bun.lockb',
+  '*.lock',
+];
+
 function normalizePath(filepath) {
   return filepath.split(path.sep).join('/');
 }
@@ -53,20 +70,21 @@ export async function loadIgnorePolicy(options = {}) {
   const projectRoot = path.resolve(options.projectRoot ?? process.cwd());
   const ignoreRoot = await resolveIgnoreRoot(options.path ?? projectRoot, projectRoot);
   const ignoreFile = path.join(ignoreRoot, '.vibeguardignore');
+  const extraPatterns = Array.isArray(options.extraPatterns) ? options.extraPatterns : [];
 
   try {
     const content = await readFile(ignoreFile, 'utf8');
     return {
       ignoreFile,
       ignoreRoot,
-      patterns: parseIgnoreFile(content),
+      patterns: [...DEFAULT_IGNORED_PATTERNS, ...parseIgnoreFile(content), ...extraPatterns],
     };
   } catch (error) {
     if (error.code === 'ENOENT') {
       return {
         ignoreFile,
         ignoreRoot,
-        patterns: [],
+        patterns: [...DEFAULT_IGNORED_PATTERNS, ...extraPatterns],
       };
     }
     throw error;

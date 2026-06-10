@@ -2,20 +2,21 @@ import path from 'node:path';
 import process from 'node:process';
 import pc from 'picocolors';
 import prompts from 'prompts';
-import { DEFAULT_ENTROPY_THRESHOLD, scanProject } from './core/engine.js';
-import { abstractFindings } from './core/remediator.js';
+import { scanProject } from './core/engine.js';
+import { abstractFindings, maskSecret } from './core/remediator.js';
 
 function parseArgs(argv = []) {
   const options = {
     scan: false,
     dryRun: false,
+    fix: false,
     yes: false,
     json: false,
     ci: false,
     silent: false,
     pathProvided: false,
     path: process.cwd(),
-    entropyThreshold: DEFAULT_ENTROPY_THRESHOLD,
+    entropyThreshold: undefined,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -25,6 +26,8 @@ function parseArgs(argv = []) {
       options.scan = true;
     } else if (arg === '--dry-run') {
       options.dryRun = true;
+    } else if (arg === '--fix') {
+      options.fix = true;
     } else if (arg === '--yes' || arg === '-y') {
       options.yes = true;
     } else if (arg === '--json') {
@@ -61,8 +64,11 @@ function safeFinding(finding, projectRoot) {
     file: path.relative(projectRoot, finding.file),
     identifier: finding.identifier,
     envName: finding.envName,
+    maskedValue: maskSecret(finding.value),
     entropy: Number(finding.entropy.toFixed(4)),
     threshold: finding.threshold,
+    confidence: finding.confidence,
+    reason: finding.reason,
     nodeType: finding.nodeType,
     line: finding.line,
     column: finding.column,
@@ -78,49 +84,85 @@ function safeScan(scan) {
       file: path.relative(scan.projectRoot, parseError.file),
       message: parseError.message,
     })),
+    scanWarnings: (scan.scanWarnings ?? []).map((warning) => ({
+      file: path.relative(scan.projectRoot, warning.file),
+      message: warning.message,
+    })),
     summary: {
       scannedFiles: scan.scannedFiles.length,
       findings: scan.findings.length,
       parseErrors: scan.parseErrors.length,
+      scanWarnings: (scan.scanWarnings ?? []).length,
     },
   };
+}
+
+function exitCodeForScan(scan) {
+  if (scan.parseErrors.length > 0) {
+    return 2;
+  }
+
+  if (scan.findings.length > 0) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function applyExitCode(scan) {
+  process.exitCode = exitCodeForScan(scan);
 }
 
 function formatFinding(finding, projectRoot) {
   const relativeFile = path.relative(projectRoot, finding.file);
   const location = `${relativeFile}:${finding.line}:${finding.column + 1}`;
-  return `${pc.yellow(location)} ${pc.cyan(finding.identifier)} entropy=${finding.entropy.toFixed(2)}`;
+  return `${pc.yellow(location)} ${pc.cyan(finding.identifier)} confidence=${finding.confidence} ${finding.reason}`;
 }
 
-async function chooseFindings(findings, options, projectRoot) {
-  if (options.yes) {
-    return findings;
-  }
+function formatRemediationPreview(result, projectRoot) {
+  const lines = [`${pc.bold('Remediation preview:')}`];
 
-  const selected = [];
-
-  for (const finding of findings) {
+  for (const finding of result.remediated) {
     const relativeFile = path.relative(projectRoot, finding.file);
-    const answer = await prompts(
-      {
-        type: 'confirm',
-        name: 'abstract',
-        message: `Suspicious high-entropy token found in ${relativeFile}. Abstract to .env?`,
-        initial: true,
-      },
-      {
-        onCancel: () => {
-          throw new Error('Scan cancelled by user.');
-        },
-      },
-    );
-
-    if (answer.abstract) {
-      selected.push(finding);
-    }
+    const location = `${relativeFile}:${finding.line}:${finding.column + 1}`;
+    lines.push(`  ${pc.yellow(location)} ${finding.identifier} -> ${finding.replacement}`);
   }
 
-  return selected;
+  for (const entry of result.envEntries) {
+    const action = entry.action === 'add' ? 'add' : 'reuse';
+    lines.push(`  ${pc.cyan(path.relative(projectRoot, result.envFile))} ${action} ${entry.envName}=${entry.maskedValue}`);
+  }
+
+  const gitignoreAction = result.gitignoreUpdated ? 'add .env' : '.env already ignored';
+  lines.push(`  ${pc.cyan(path.relative(projectRoot, result.gitignoreFile))} ${gitignoreAction}`);
+
+  for (const warning of result.warnings) {
+    lines.push(`  ${pc.yellow('Warning:')} ${warning}`);
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
+async function confirmFix(options) {
+  if (options.yes) {
+    return true;
+  }
+
+  const answer = await prompts(
+    {
+      type: 'confirm',
+      name: 'apply',
+      message: 'Apply these remediations now?',
+      initial: false,
+    },
+    {
+      onCancel: () => {
+        throw new Error('Fix cancelled by user.');
+      },
+    },
+  );
+
+  return Boolean(answer.apply);
 }
 
 export async function run(argv = []) {
@@ -134,14 +176,13 @@ export async function run(argv = []) {
 
   if (options.ci || options.silent) {
     process.stdout.write(`${JSON.stringify(safeScan(scan), null, 2)}\n`);
-    if (scan.findings.length > 0) {
-      process.exitCode = 1;
-    }
+    applyExitCode(scan);
     return scan;
   }
 
   if (options.json) {
-    process.stdout.write(`${JSON.stringify(scan, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(safeScan(scan), null, 2)}\n`);
+    applyExitCode(scan);
     return scan;
   }
 
@@ -152,8 +193,13 @@ export async function run(argv = []) {
     process.stderr.write(`${pc.red('Parse warning:')} ${parseError.file} ${parseError.message}\n`);
   }
 
+  for (const warning of scan.scanWarnings ?? []) {
+    process.stderr.write(`${pc.yellow('Scan warning:')} ${warning.file} ${warning.message}\n`);
+  }
+
   if (scan.findings.length === 0) {
     process.stdout.write(`${pc.green('No validated high-entropy secrets found.')}\n`);
+    applyExitCode(scan);
     return scan;
   }
 
@@ -163,23 +209,45 @@ export async function run(argv = []) {
   }
 
   if (options.dryRun) {
+    const preview = await abstractFindings(scan.findings, {
+      projectRoot: scan.projectRoot,
+      dryRun: true,
+    });
+    process.stdout.write(formatRemediationPreview(preview, scan.projectRoot));
     process.stdout.write(`${pc.yellow('Dry run enabled. No files were changed.')}\n`);
+    applyExitCode(scan);
     return scan;
   }
 
-  const selected = await chooseFindings(scan.findings, options, scan.projectRoot);
-  if (selected.length === 0) {
-    process.stdout.write(`${pc.dim('No remediations selected.')}\n`);
+  if (!options.fix) {
+    if (options.yes) {
+      process.stdout.write(`${pc.yellow('--yes was provided without --fix, so no files were changed.')}\n`);
+    }
+    process.stdout.write(`${pc.dim('Scan-only mode. No files changed. Run with --dry-run to preview or --fix to remediate.')}\n`);
+    applyExitCode(scan);
     return scan;
   }
 
-  const result = await abstractFindings(selected, {
+  const preview = await abstractFindings(scan.findings, {
     projectRoot: scan.projectRoot,
-    dryRun: options.dryRun,
+    dryRun: true,
+  });
+  process.stdout.write(formatRemediationPreview(preview, scan.projectRoot));
+
+  if (!(await confirmFix(options))) {
+    process.stdout.write(`${pc.dim('No remediations applied.')}\n`);
+    applyExitCode(scan);
+    return scan;
+  }
+
+  const result = await abstractFindings(scan.findings, {
+    projectRoot: scan.projectRoot,
+    dryRun: false,
   });
 
   process.stdout.write(`${pc.green(`Abstracted ${result.remediated.length} secret(s) into ${path.relative(scan.projectRoot, result.envFile)}.`)}\n`);
-  process.stdout.write(`${pc.dim(`Ensured ${path.relative(scan.projectRoot, result.gitignoreFile)} ignores .env*.`)}\n`);
+  process.stdout.write(`${pc.dim(`Ensured ${path.relative(scan.projectRoot, result.gitignoreFile)} ignores .env.`)}\n`);
+  applyExitCode(scan);
 
   return {
     ...scan,
@@ -192,6 +260,6 @@ export async function main(argv = process.argv.slice(2)) {
     await run(argv);
   } catch (error) {
     process.stderr.write(`${pc.red('VibeGuard failed:')} ${error.message}\n`);
-    process.exitCode = 1;
+    process.exitCode = 2;
   }
 }

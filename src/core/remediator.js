@@ -5,6 +5,16 @@ function sourceReplacement(envName) {
   return `process.env.${envName}`;
 }
 
+function maskSecret(value) {
+  const text = String(value);
+  if (text.length <= 4) {
+    return '****';
+  }
+
+  const prefix = text.match(/^[A-Za-z]{2,6}[-_]/)?.[0] ?? '';
+  return `${prefix}****${text.slice(-4)}`;
+}
+
 function escapeEnvValue(value) {
   return JSON.stringify(String(value));
 }
@@ -50,7 +60,10 @@ function uniqueEnvName(baseName, value, existingEnv) {
   const encodedValue = escapeEnvValue(value);
 
   if (!existingEnv.has(base) || existingEnv.get(base) === encodedValue) {
-    return base;
+    return {
+      envName: base,
+      warning: null,
+    };
   }
 
   let suffix = 2;
@@ -58,17 +71,27 @@ function uniqueEnvName(baseName, value, existingEnv) {
     suffix += 1;
   }
 
-  return `${base}_${suffix}`;
+  return {
+    envName: `${base}_${suffix}`,
+    warning: `${base} already exists in .env with a different value; using ${base}_${suffix} instead.`,
+  };
 }
 
 function appendEnvEntries(content, entries) {
   const existingEnv = parseExistingEnv(content);
   let nextContent = content;
   const resolved = [];
+  const envEntries = [];
+  const warnings = [];
 
   for (const finding of entries) {
-    const envName = uniqueEnvName(finding.envName, finding.value, existingEnv);
+    const { envName, warning } = uniqueEnvName(finding.envName, finding.value, existingEnv);
     const encodedValue = escapeEnvValue(finding.value);
+    let action = 'reuse';
+
+    if (warning) {
+      warnings.push(warning);
+    }
 
     if (!existingEnv.has(envName)) {
       if (nextContent.length > 0 && !nextContent.endsWith('\n')) {
@@ -76,7 +99,14 @@ function appendEnvEntries(content, entries) {
       }
       nextContent += `${envName}=${encodedValue}\n`;
       existingEnv.set(envName, encodedValue);
+      action = 'add';
     }
+
+    envEntries.push({
+      envName,
+      action,
+      maskedValue: maskSecret(finding.value),
+    });
 
     resolved.push({
       ...finding,
@@ -88,12 +118,14 @@ function appendEnvEntries(content, entries) {
   return {
     content: nextContent,
     findings: resolved,
+    envEntries,
+    warnings,
   };
 }
 
 function appendGitignoreEntry(content) {
   const lines = content.split(/\r?\n/).map((line) => line.trim());
-  if (lines.includes('.env*')) {
+  if (lines.includes('.env')) {
     return content;
   }
 
@@ -102,7 +134,7 @@ function appendGitignoreEntry(content) {
     nextContent += '\n';
   }
 
-  return `${nextContent}.env*\n`;
+  return `${nextContent}.env\n`;
 }
 
 function replaceFindingsInSource(source, findings) {
@@ -131,12 +163,15 @@ export async function abstractFindings(findings, options = {}) {
 
   const envContent = await readTextFile(envFile);
   const envUpdate = appendEnvEntries(envContent, findings);
+  const gitignoreContent = await readTextFile(gitignoreFile);
+  const nextGitignoreContent = appendGitignoreEntry(gitignoreContent);
+  const gitignoreUpdated = nextGitignoreContent !== gitignoreContent;
 
   if (!options.dryRun) {
     await atomicWrite(envFile, envUpdate.content);
-
-    const gitignoreContent = await readTextFile(gitignoreFile);
-    await atomicWrite(gitignoreFile, appendGitignoreEntry(gitignoreContent));
+    if (gitignoreUpdated) {
+      await atomicWrite(gitignoreFile, nextGitignoreContent);
+    }
   }
 
   const byFile = new Map();
@@ -156,10 +191,13 @@ export async function abstractFindings(findings, options = {}) {
   }
 
   return {
-    remediated: envUpdate.findings,
+    remediated: envUpdate.findings.map(({ value, ...finding }) => finding),
     envFile,
     gitignoreFile,
+    envEntries: envUpdate.envEntries,
+    warnings: envUpdate.warnings,
+    gitignoreUpdated,
   };
 }
 
-export { escapeEnvValue, sourceReplacement };
+export { appendGitignoreEntry, escapeEnvValue, maskSecret, sourceReplacement };
