@@ -1,15 +1,15 @@
 {
   "name": "vibe-security-akoris",
-  "version": "2.0.0-mvp",
+  "version": "2.0.0",
   "description": "Algorithmic AST and Shannon entropy secret detector",
   "type": "module",
   "main": "index.js",
   "bin": {
-    "vibe-security-akoris": "./bin/vsg",
-    "vibeguard": "./bin/vsg",
-    "vsg": "./bin/vsg",
-    "vibe-security-akoris-protect": "./src/protector.js",
-    "vibeguard-protect": "./src/protector.js"
+    "vibe-security-akoris": "bin/vsg",
+    "vibeguard": "bin/vsg",
+    "vsg": "bin/vsg",
+    "vibe-security-akoris-protect": "src/protector.js",
+    "vibeguard-protect": "src/protector.js"
   },
   "scripts": {
     "start": "node bin/vsg",
