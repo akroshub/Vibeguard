@@ -60,16 +60,16 @@ export function buildHookScript() {
     '# VibeGuard blocks commits when staged JavaScript or TypeScript contains validated high-entropy secrets.',
     'echo "[VibeGuard] Sentinel scanning staged changes..."',
     'if command -v npx >/dev/null 2>&1; then',
-    '  npx vibeguard scan --ci',
+    '  npx vibe-security-akoris scan --ci',
     '  status=$?',
     'elif command -v npx.cmd >/dev/null 2>&1; then',
-    '  npx.cmd vibeguard scan --ci',
+    '  npx.cmd vibe-security-akoris scan --ci',
     '  status=$?',
     'elif command -v powershell.exe >/dev/null 2>&1; then',
-    '  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "npx vibeguard scan --ci"',
+    '  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "npx vibe-security-akoris scan --ci"',
     '  status=$?',
     'elif command -v pwsh >/dev/null 2>&1; then',
-    '  pwsh -NoProfile -Command "npx vibeguard scan --ci"',
+    '  pwsh -NoProfile -Command "npx vibe-security-akoris scan --ci"',
     '  status=$?',
     'else',
     '  echo "[VibeGuard] Unable to find npx. Install Node.js/npm before committing."',
@@ -148,7 +148,7 @@ export async function main(argv = process.argv.slice(2)) {
 
     const installed = await installPreCommitHook({ cwd: repository.projectRoot });
     process.stdout.write(`${pc.green('Pre-commit protection installed.')}\n`);
-    process.stdout.write(`${pc.dim('Commits now run: npx vibeguard scan --ci')}\n`);
+    process.stdout.write(`${pc.dim('Commits now run: npx vibe-security-akoris scan --ci')}\n`);
     process.stdout.write(`${pc.dim(`Installed at: ${installed.hookPath}`)}\n`);
   } catch (error) {
     process.stderr.write(`${pc.red('VibeGuard protection failed:')} ${error.message}\n`);

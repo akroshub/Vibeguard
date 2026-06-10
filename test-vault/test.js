@@ -97,8 +97,8 @@ async function run() {
   await rm(tempRoot, { recursive: true, force: true });
 
   const hookScript = buildHookScript();
-  assert.ok(hookScript.includes('npx vibeguard scan --ci'));
-  assert.ok(hookScript.includes('npx.cmd vibeguard scan --ci'));
+  assert.ok(hookScript.includes('npx vibe-security-akoris scan --ci'));
+  assert.ok(hookScript.includes('npx.cmd vibe-security-akoris scan --ci'));
   assert.ok(hookScript.includes('powershell.exe'));
 
   const gitRoot = await mkdtemp(path.join(os.tmpdir(), 'vibeguard-git-'));
@@ -121,7 +121,7 @@ async function run() {
   const installedHook = await readFile(hookPath, 'utf8');
   assert.ok(installedHook.includes('echo "existing hook"'));
   assert.equal((installedHook.match(/# >>> VibeGuard Sentinel >>>/g) ?? []).length, 1);
-  assert.ok((installedHook.match(/npx vibeguard scan --ci/g) ?? []).length >= 1);
+  assert.ok((installedHook.match(/npx vibe-security-akoris scan --ci/g) ?? []).length >= 1);
   await rm(gitRoot, { recursive: true, force: true });
 }
 

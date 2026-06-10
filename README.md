@@ -78,7 +78,7 @@ npm run scan
 Run the scanner in CI/pre-commit mode:
 
 ```bash
-npx vibeguard scan --ci
+npx vibe-security-akoris scan --ci
 ```
 
 CI mode prints redacted JSON, never prompts, never rewrites files, and exits with status `1` when validated secret candidates are found.
@@ -118,7 +118,7 @@ npm test
 VibeGuard can install a persistent Git pre-commit sentinel:
 
 ```bash
-npx vibeguard-protect
+npx --package vibe-security-akoris vibe-security-akoris-protect
 ```
 
 The protector verifies that the current directory is inside a Git work tree, locates the repository hook path with Git, and offers to install a `pre-commit` hook. Existing hook content is preserved. VibeGuard adds an idempotent Sentinel block, so rerunning the installer refreshes the block instead of duplicating it.
@@ -126,7 +126,7 @@ The protector verifies that the current directory is inside a Git work tree, loc
 Once installed, every commit runs:
 
 ```bash
-npx vibeguard scan --ci
+npx vibe-security-akoris scan --ci
 ```
 
 If the staged diff contains a validated high-entropy secret, the scanner exits nonzero and Git aborts the commit. The hook is written as a portable shell script for Unix and Git for Windows environments; it can invoke `npx`, `npx.cmd`, Windows PowerShell, or PowerShell Core depending on what is available.
@@ -134,7 +134,7 @@ If the staged diff contains a validated high-entropy secret, the scanner exits n
 Non-interactive installation is available for bootstrap scripts:
 
 ```bash
-npx vibeguard-protect --yes
+npx --package vibe-security-akoris vibe-security-akoris-protect --yes
 ```
 
 ## Supported Files
