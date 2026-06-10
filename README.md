@@ -48,7 +48,7 @@ npx vibe-security-akoris scan --fix
 Run non-interactively:
 
 ```bash
-npx vibe-security-akoris scan --fix --yes
+node bin/vsg --scan --fix --yes
 ```
 
 Scan a specific path:
@@ -128,6 +128,10 @@ VibeGuard scans `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, and `.tsx`.
 - Beta scanner: it may miss secrets and may still report false positives.
 - It checks string literals in supported AST contexts, not every possible way a secret can appear.
 - It intentionally avoids vendor-specific API-key regex databases.
+
+## License
+
+MIT
 
 ## Feedback
 

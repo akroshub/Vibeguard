@@ -4,6 +4,19 @@
   "description": "Algorithmic AST and Shannon entropy secret detector",
   "type": "module",
   "main": "index.js",
+  "license": "MIT",
+  "keywords": [
+    "security",
+    "secret-scanner",
+    "secrets",
+    "devsecops",
+    "javascript",
+    "typescript",
+    "cli",
+    "pre-commit",
+    "ast",
+    "entropy"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/akroshub/Vibeguard.git"
@@ -29,7 +42,9 @@
     "bin",
     "src",
     "index.js",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "dependencies": {
     "@babel/parser": "^7.26.3",
